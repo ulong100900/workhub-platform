@@ -1,22 +1,14 @@
 {
-  "name": "workfinder-server",
-  "version": "1.0.0",
-  "main": "dist/index.js",
   "scripts": {
     "start": "node dist/index.js",
-    "build": "tsc",
-    "dev": "ts-node-dev src/index.ts"
+    "build": "node ./node_modules/typescript/bin/tsc",
+    "dev": "node ./node_modules/ts-node/dist/bin.js src/index.ts"
   },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
     "dotenv": "^16.0.0",
     "typescript": "^5.0.0",
-    "ts-node-dev": "^2.0.0"
-  },
-  "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/express": "^4.17.0",
-    "@types/cors": "^2.8.0"
+    "ts-node": "^10.9.0"
   }
 }
