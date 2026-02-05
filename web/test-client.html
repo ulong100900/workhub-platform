@@ -1,0 +1,225 @@
+<script>
+    const API_BASE = 'http://localhost:5000/api';
+    let currentUser = null;
+    
+    // Простое уведомление
+    function showNotification(message, type = 'success') {
+        alert(`${type === 'error' ? '❌' : '✅'} ${message}`);
+    }
+    
+    // Переключение табов
+    function switchTab(tabName) {
+        document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+        event.target.classList.add('active');
+        document.getElementById(tabName + 'Tab').classList.add('active');
+    }
+    
+    // Проверка сервера
+    async function checkServerStatus() {
+        try {
+            const response = await fetch(`${API_BASE}/health`);
+            const data = await response.json();
+            document.getElementById('serverStatus').innerHTML = 
+                `✅ Сервер работает (версия: ${data.version})`;
+            document.getElementById('serverStatus').className = 'status-card status-online';
+            loadData();
+        } catch (error) {
+            document.getElementById('serverStatus').innerHTML = '❌ Сервер недоступен';
+            document.getElementById('serverStatus').className = 'status-card status-offline';
+            console.log('Для запуска сервера выполните:');
+            console.log('1. cd C:\\Users\\111\\Desktop\\workfinder\\server');
+            console.log('2. node server.js');
+        }
+    }
+    
+    // Загрузка данных
+    async function loadData() {
+        try {
+            // Статистика
+            const statsRes = await fetch(`${API_BASE}/stats`);
+            const stats = await statsRes.json();
+            
+            document.getElementById('statsGrid').innerHTML = `
+                <div class="stat-item">
+                    <span class="stat-number">${stats.stats.users}</span>
+                    <span class="stat-label">Пользователей</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number">${stats.stats.projects}</span>
+                    <span class="stat-label">Проектов</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number">${stats.stats.openProjects}</span>
+                    <span class="stat-label">Открытых</span>
+                </div>
+            `;
+            
+            // Проекты
+            const projectsRes = await fetch(`${API_BASE}/projects`);
+            const projectsData = await projectsRes.json();
+            
+            let projectsHTML = '';
+            projectsData.projects.forEach(project => {
+                projectsHTML += `
+                    <div class="project-item">
+                        <div class="project-title">${project.title}</div>
+                        <div class="project-description">${project.description}</div>
+                        <div class="project-meta">
+                            <span class="budget">${project.budget} ₽</span>
+                            <span class="status status-${project.status.replace('_', '-')}">
+                                ${project.status === 'open' ? 'Открыт' : 'В работе'}
+                            </span>
+                        </div>
+                    </div>
+                `;
+            });
+            document.getElementById('projectList').innerHTML = projectsHTML;
+            
+            // Пользователи
+            const usersRes = await fetch(`${API_BASE}/users`);
+            const usersData = await usersRes.json();
+            
+            let usersHTML = '';
+            usersData.users.forEach(user => {
+                usersHTML += `
+                    <div class="user-item">
+                        <div class="user-avatar">${user.name.charAt(0)}</div>
+                        <div class="user-info">
+                            <h4>${user.name}</h4>
+                            <p>${user.email}</p>
+                        </div>
+                        <span class="user-role role-${user.role}">
+                            ${user.role === 'freelancer' ? 'Фрилансер' : 
+                              user.role === 'client' ? 'Заказчик' : 'Админ'}
+                        </span>
+                    </div>
+                `;
+            });
+            document.getElementById('userList').innerHTML = usersHTML;
+            
+        } catch (error) {
+            console.error('Ошибка загрузки:', error);
+        }
+    }
+    
+    // Авторизация
+    async function login(event) {
+        event.preventDefault();
+        const email = document.getElementById('loginEmail').value;
+        const password = document.getElementById('loginPassword').value;
+        
+        console.log('Отправка запроса на логин:', email);
+        
+        try {
+            const response = await fetch(`${API_BASE}/auth/login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ email, password })
+            });
+            
+            const data = await response.json();
+            console.log('Ответ сервера:', data);
+            
+            if (data.success) {
+                currentUser = data.user;
+                showNotification(`Добро пожаловать, ${data.user.name}!`);
+                document.getElementById('loginForm').reset();
+            } else {
+                showNotification(data.message, 'error');
+            }
+        } catch (error) {
+            console.error('Ошибка логина:', error);
+            showNotification(`Ошибка: ${error.message}`, 'error');
+        }
+    }
+    
+    // Регистрация - УПРОЩЕННАЯ ВЕРСИЯ
+    async function register(event) {
+        event.preventDefault();
+        const name = document.getElementById('regName').value;
+        const email = document.getElementById('regEmail').value;
+        const password = document.getElementById('regPassword').value;
+        const role = document.getElementById('regRole').value;
+        
+        console.log('Регистрация:', { name, email, role });
+        
+        try {
+            const response = await fetch(`${API_BASE}/auth/register`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    name, 
+                    email, 
+                    password,
+                    role 
+                })
+            });
+            
+            console.log('Статус ответа:', response.status);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            console.log('Данные ответа:', data);
+            
+            if (data.success) {
+                showNotification(`Успешная регистрация! Добро пожаловать, ${data.user.name}`);
+                document.getElementById('registerForm').reset();
+                switchTab('login');
+                loadData(); // Обновить список пользователей
+            } else {
+                showNotification(data.message, 'error');
+            }
+        } catch (error) {
+            console.error('Полная ошибка регистрации:', error);
+            showNotification(`Ошибка регистрации: ${error.message}`, 'error');
+        }
+    }
+    
+    // Создание проекта
+    async function createProject(event) {
+        event.preventDefault();
+        const title = document.getElementById('projectTitle').value;
+        const description = document.getElementById('projectDescription').value;
+        const budget = document.getElementById('projectBudget').value;
+        
+        try {
+            const response = await fetch(`${API_BASE}/projects`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    title, 
+                    description, 
+                    budget: parseInt(budget),
+                    clientId: currentUser ? currentUser.id : 3
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showNotification('Проект успешно создан!');
+                document.getElementById('projectForm').reset();
+                loadData();
+            } else {
+                showNotification(data.message, 'error');
+            }
+        } catch (error) {
+            showNotification('Ошибка создания проекта', 'error');
+        }
+    }
+    
+    // Инициализация
+    document.addEventListener('DOMContentLoaded', () => {
+        checkServerStatus();
+        setInterval(checkServerStatus, 10000);
+    });
+</script>

@@ -1,0 +1,179 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String        @id @default(cuid())
+  email           String        @unique
+  phone           String        @unique
+  fullName        String?
+  avatarUrl       String?
+  role            UserRole      @default(CUSTOMER)
+  companyName     String?
+  inn             String?       @unique
+  isVerified      Boolean       @default(false)
+  rating          Float         @default(0)
+  completedJobs   Int           @default(0)
+  notificationSettings Json? // { email: boolean, sms: boolean, push: boolean }
+  emailVerified        Boolean @default(false)
+  phoneVerified        Boolean @default(false)
+  
+  // Связи
+  orders          Order[]       @relation("CustomerOrders")
+  bids            Bid[]         @relation("ExecutorBids")
+  reviewsAsCustomer Review[]    @relation("CustomerReviews")
+  reviewsAsExecutor Review[]    @relation("ExecutorReviews")
+  messagesSent    Message[]     @relation("SenderMessages")
+  messagesReceived Message[]    @relation("RecipientMessages")
+  
+  // Payment info
+  bankCard        String?
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  title           String
+  description     String
+  category        OrderCategory
+  budget          Float?
+  location        Json          // { address: string, lat: number, lng: number }
+  address         String
+  city            String
+  status          OrderStatus   @default(ACTIVE)
+  
+  // Связи
+  customerId      String
+  customer        User          @relation("CustomerOrders", fields: [customerId], references: [id])
+  bids            Bid[]
+  acceptedBidId   String?
+  acceptedBid     Bid?          @relation("AcceptedBid", fields: [acceptedBidId], references: [id])
+  
+  // Файлы и фото
+  attachments     String[]      // URLs to files
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  @@index([category])
+  @@index([status])
+  @@index([city])
+}
+
+model Bid {
+  id              String        @id @default(cuid())
+  price           Float
+  comment         String?
+  estimatedDays   Int?
+  status          BidStatus     @default(PENDING)
+  
+  // Связи
+  orderId         String
+  order           Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  executorId      String
+  executor        User          @relation("ExecutorBids", fields: [executorId], references: [id])
+  
+  // Если ставка принята
+  isAccepted      Boolean       @default(false)
+  
+  createdAt       DateTime      @default(now())
+  
+  @@index([orderId])
+  @@index([executorId])
+}
+
+model Review {
+  id              String        @id @default(cuid())
+  rating          Int           // 1-5
+  comment         String?
+  
+  // Связи
+  orderId         String        @unique
+  order           Order         @relation(fields: [orderId], references: [id])
+  customerId      String
+  customer        User          @relation("CustomerReviews", fields: [customerId], references: [id])
+  executorId      String
+  executor        User          @relation("ExecutorReviews", fields: [executorId], references: [id])
+  
+  createdAt       DateTime      @default(now())
+}
+
+model Message {
+  id              String        @id @default(cuid())
+  content         String
+  isRead          Boolean       @default(false)
+  
+  // Связи
+  orderId         String
+  order           Order         @relation(fields: [orderId], references: [id])
+  senderId        String
+  sender          User          @relation("SenderMessages", fields: [senderId], references: [id])
+  recipientId     String
+  recipient       User          @relation("RecipientMessages", fields: [recipientId], references: [id])
+  
+  createdAt       DateTime      @default(now())
+  
+  @@index([orderId])
+  @@index([senderId, recipientId])
+}
+
+model Notification {
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type            String        // new_order, new_bid, bid_accepted, etc.
+  title           String
+  message         String
+  data            Json?         // Дополнительные данные { orderId, bidId, etc. }
+  
+  isRead          Boolean       @default(false)
+  isEmailSent     Boolean       @default(false)
+  isSMSSent       Boolean       @default(false)
+  
+  createdAt       DateTime      @default(now())
+  readAt          DateTime?
+  
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+// Enums
+enum UserRole {
+  CUSTOMER
+  EXECUTOR
+  ADMIN
+}
+
+enum OrderCategory {
+  EXCAVATION      // Земляные работы
+  CRANE           // Крановые работы
+  LOADING         // Погрузочные работы
+  TRANSPORT       // Перевозки
+  CONSTRUCTION    // Строительные работы
+  CLEANING        // Уборка/расчистка
+  REPAIR          // Ремонтные работы
+  OTHER           // Другое
+}
+
+enum OrderStatus {
+  ACTIVE          // Активен, ищет исполнителя
+  IN_PROGRESS     // В работе
+  COMPLETED       // Завершен
+  CANCELLED       // Отменен
+}
+
+enum BidStatus {
+  PENDING         // Ожидает рассмотрения
+  ACCEPTED        // Принята
+  REJECTED        // Отклонена
+}
+

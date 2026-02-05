@@ -1,0 +1,13 @@
+node_modules
+.next
+out
+dist
+build
+coverage
+*.log
+*.lock
+.env*
+!.env.example
+public
+.DS_Store
+*.md

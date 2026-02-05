@@ -1,0 +1,13 @@
+{ 
+  "name": "workfinder", 
+  "version": "1.0.0", 
+  "private": true, 
+  "scripts": { 
+    "install:all": "npm install && cd mobile && npm install && cd ../server && npm install && cd ../web && npm install", 
+    "dev:all": "concurrently \"npm run dev:web\" \"npm run dev:server\" \"npm run dev:mobile\"", 
+    "dev:web": "cd web && npm run dev", 
+    "dev:server": "cd server && npm run dev", 
+    "dev:mobile": "cd mobile && npm start", 
+    "build:all": "cd web && npm run build && cd ../server && npm run build" 
+  } 
+} 

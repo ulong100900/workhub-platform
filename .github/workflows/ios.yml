@@ -1,0 +1,119 @@
+# .github/workflows/ios.yml
+name: iOS CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: iOS Tests
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: mobile/package-lock.json
+        
+    - name: Install dependencies
+      run: |
+        cd mobile
+        npm ci
+        
+    - name: Install CocoaPods
+      run: |
+        cd mobile/ios
+        pod install
+        
+    - name: Run E2E Tests
+      run: |
+        cd mobile
+        npm run e2e:build:ios
+        npm run e2e:test:ios
+      env:
+        EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+        EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+        
+    - name: Upload test artifacts
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: detox-artifacts
+        path: |
+          mobile/artifacts
+          mobile/*.mp4
+          
+  build:
+    name: Build iOS
+    needs: test
+    runs-on: macos-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        
+    - name: Install dependencies
+      run: |
+        cd mobile
+        npm ci
+        
+    - name: Install CocoaPods
+      run: |
+        cd mobile/ios
+        pod install
+        
+    - name: Build iOS
+      run: |
+        cd mobile
+        npx eas-cli build --platform ios --profile production --non-interactive --no-wait
+      env:
+        EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        
+    - name: Deploy to TestFlight
+      if: success()
+      run: |
+        cd mobile
+        npx eas-cli submit --platform ios --latest --non-interactive
+      env:
+        EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        
+  deploy:
+    name: Deploy Update
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        
+    - name: Install dependencies
+      run: |
+        cd mobile
+        npm ci
+        
+    - name: Publish OTA Update
+      run: |
+        cd mobile
+        npx eas-cli update --branch production --message "Production update $(date +'%Y-%m-%d %H:%M')"
+      env:
+        EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
