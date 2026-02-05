@@ -1,9 +1,52 @@
-import { Server } from 'socket.io';
+import { Server, Socket } from 'socket.io';
 import { createServer } from 'http';
 import app from '../index';
 import { prisma } from '../index';
 import logger from '../utils/logger';
 import { verifyToken } from '../utils/auth';
+
+interface SocketUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
+interface MessageData {
+  roomId: string;
+  content: string;
+  type?: string;
+  tempId?: string;
+}
+
+interface TypingData {
+  roomId: string;
+  isTyping: boolean;
+}
+
+interface ReadMessagesData {
+  roomId: string;
+  messageIds: string[];
+}
+
+interface CallData {
+  userId: string;
+  offer?: any;
+  roomId?: string;
+  callerId?: string;
+  answer?: any;
+  candidate?: any;
+}
+
+interface PushNotificationData {
+  type: string;
+  conversationId: string;
+  messageId: string;
+  senderId: string;
+}
+
+interface CustomSocket extends Socket {
+  user?: SocketUser;
+}
 
 export class WebSocketServer {
   private io: Server;
@@ -31,7 +74,7 @@ export class WebSocketServer {
   }
 
   private setupMiddleware() {
-    this.io.use(async (socket, next) => {
+    this.io.use(async (socket: CustomSocket, next) => {
       try {
         const token = socket.handshake.auth.token;
         
@@ -39,8 +82,8 @@ export class WebSocketServer {
           return next(new Error('Authentication error'));
         }
 
-        const decoded = verifyToken(token);
-        (socket as any).user = decoded;
+        const decoded = verifyToken(token) as SocketUser;
+        socket.user = decoded;
         
         next();
       } catch (error) {
@@ -51,8 +94,9 @@ export class WebSocketServer {
   }
 
   private setupEventHandlers() {
-    this.io.on('connection', (socket) => {
-      const user = (socket as any).user;
+    this.io.on('connection', (socket: Socket) => {
+      const customSocket = socket as CustomSocket;
+      const user = customSocket.user;
       
       if (!user) {
         socket.disconnect();
@@ -65,15 +109,15 @@ export class WebSocketServer {
       logger.info(`User ${user.id} connected with socket ${socket.id}`);
 
       // Основные события
-      socket.on('join_room', (roomId) => this.handleJoinRoom(socket, roomId));
-      socket.on('leave_room', (roomId) => this.handleLeaveRoom(socket, roomId));
-      socket.on('send_message', (data) => this.handleSendMessage(socket, data));
-      socket.on('typing', (data) => this.handleTyping(socket, data));
-      socket.on('read_messages', (data) => this.handleReadMessages(socket, data));
-      socket.on('call_user', (data) => this.handleCallUser(socket, data));
-      socket.on('call_answer', (data) => this.handleCallAnswer(socket, data));
-      socket.on('ice_candidate', (data) => this.handleIceCandidate(socket, data));
-      socket.on('disconnect', () => this.handleDisconnect(socket));
+      socket.on('join_room', (roomId: string) => this.handleJoinRoom(socket, roomId));
+      socket.on('leave_room', (roomId: string) => this.handleLeaveRoom(socket, roomId));
+      socket.on('send_message', (data: MessageData) => this.handleSendMessage(customSocket, data));
+      socket.on('typing', (data: TypingData) => this.handleTyping(customSocket, data));
+      socket.on('read_messages', (data: ReadMessagesData) => this.handleReadMessages(customSocket, data));
+      socket.on('call_user', (data: CallData) => this.handleCallUser(customSocket, data));
+      socket.on('call_answer', (data: CallData) => this.handleCallAnswer(customSocket, data));
+      socket.on('ice_candidate', (data: CallData) => this.handleIceCandidate(customSocket, data));
+      socket.on('disconnect', () => this.handleDisconnect(customSocket));
     });
   }
 
@@ -120,20 +164,20 @@ export class WebSocketServer {
     }
   }
 
-  private handleJoinRoom(socket: any, roomId: string) {
+  private handleJoinRoom(socket: Socket, roomId: string) {
     socket.join(roomId);
     logger.info(`Socket ${socket.id} joined room ${roomId}`);
   }
 
-  private handleLeaveRoom(socket: any, roomId: string) {
+  private handleLeaveRoom(socket: Socket, roomId: string) {
     socket.leave(roomId);
     logger.info(`Socket ${socket.id} left room ${roomId}`);
   }
 
-  private async handleSendMessage(socket: any, data: any) {
+  private async handleSendMessage(socket: CustomSocket, data: MessageData) {
     try {
       const { roomId, content, type = 'text', tempId } = data;
-      const user = socket.user;
+      const user = socket.user!;
 
       if (!roomId || !content) {
         socket.emit('error', { message: 'Недостаточно данных' });
@@ -186,16 +230,16 @@ export class WebSocketServer {
       // Отправка push уведомлений
       await this.sendMessageNotifications(roomId, message, user.id);
 
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error('Handle send message error:', error);
       socket.emit('error', { message: 'Ошибка при отправке сообщения' });
     }
   }
 
-  private async handleTyping(socket: any, data: any) {
+  private async handleTyping(socket: CustomSocket, data: TypingData) {
     try {
       const { roomId, isTyping } = data;
-      const user = socket.user;
+      const user = socket.user!;
 
       // Отправка уведомления о наборе текста всем в комнате, кроме отправителя
       socket.to(roomId).emit('user_typing', {
@@ -205,15 +249,15 @@ export class WebSocketServer {
         isTyping,
         timestamp: new Date().toISOString(),
       });
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error('Handle typing error:', error);
     }
   }
 
-  private async handleReadMessages(socket: any, data: any) {
+  private async handleReadMessages(socket: CustomSocket, data: ReadMessagesData) {
     try {
       const { roomId, messageIds } = data;
-      const user = socket.user;
+      const user = socket.user!;
 
       // Обновление статуса прочтения сообщений
       await prisma.message.updateMany({
@@ -252,15 +296,15 @@ export class WebSocketServer {
         }
       });
 
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error('Handle read messages error:', error);
     }
   }
 
-  private async handleCallUser(socket: any, data: any) {
+  private async handleCallUser(socket: CustomSocket, data: CallData) {
     try {
       const { userId, offer, roomId } = data;
-      const caller = socket.user;
+      const caller = socket.user!;
 
       // Проверка, что пользователь онлайн
       const userSockets = this.userSockets.get(userId);
@@ -289,7 +333,7 @@ export class WebSocketServer {
         timestamp: new Date().toISOString(),
       });
 
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error('Handle call user error:', error);
       socket.emit('call_failed', {
         reason: 'Ошибка при установке звонка',
@@ -297,10 +341,10 @@ export class WebSocketServer {
     }
   }
 
-  private async handleCallAnswer(socket: any, data: any) {
+  private async handleCallAnswer(socket: CustomSocket, data: CallData) {
     try {
       const { callerId, answer } = data;
-      const receiver = socket.user;
+      const receiver = socket.user!;
 
       // Отправка ответа звонящему
       const callerSockets = this.userSockets.get(callerId);
@@ -314,15 +358,15 @@ export class WebSocketServer {
           });
         });
       }
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error('Handle call answer error:', error);
     }
   }
 
-  private async handleIceCandidate(socket: any, data: any) {
+  private async handleIceCandidate(socket: CustomSocket, data: CallData) {
     try {
       const { userId, candidate } = data;
-      const sender = socket.user;
+      const sender = socket.user!;
 
       // Пересылка ICE кандидата
       const userSockets = this.userSockets.get(userId);
@@ -335,18 +379,18 @@ export class WebSocketServer {
           });
         });
       }
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error('Handle ice candidate error:', error);
     }
   }
 
-  private async handleDisconnect(socket: any) {
+  private async handleDisconnect(socket: CustomSocket) {
     try {
       const user = socket.user;
       logger.info(`User ${user?.id} disconnected with socket ${socket.id}`);
       
       this.unregisterUser(socket.id);
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error('Handle disconnect error:', error);
     }
   }
@@ -365,7 +409,7 @@ export class WebSocketServer {
       }
 
       return conversation.participants.some(p => p.userId === userId);
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error('Check room access error:', error);
       return false;
     }
@@ -399,7 +443,7 @@ export class WebSocketServer {
       for (const participant of conversation.participants) {
         if (participant.user.id !== senderId) {
           // Проверка настроек уведомлений
-          const settings = participant.user.notificationSettings;
+          const settings = participant.user.notificationSettings as any;
           if (settings?.messages) {
             // Отправка push уведомления
             this.sendPushNotification(
@@ -418,12 +462,12 @@ export class WebSocketServer {
           }
         }
       }
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error('Send message notifications error:', error);
     }
   }
 
-  private sendPushNotification(userId: string, title: string, body: string, data: any) {
+  private sendPushNotification(userId: string, title: string, body: string, data: PushNotificationData) {
     // Здесь должна быть интеграция с Firebase Cloud Messaging или другим push сервисом
     // Для простоты просто эмитируем событие
     const userSockets = this.userSockets.get(userId);
